@@ -1,0 +1,516 @@
+"use strict";
+
+(function () {
+  let managementKey = "";
+  let busy = false;
+  let generation = 0;
+  let sensitiveWords = ["Hermes", "Nous", "pi"];
+  let cachedCredentials = [];
+
+  const $ = (id) => document.getElementById(id);
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
+
+  function showToast(message, type = "info") {
+    const container = $("toast-container");
+    if (!container) return;
+    const toast = el("div", "toast");
+    const icon = type === "success" ? "✅" : type === "error" ? "❌" : "ℹ️";
+    toast.append(el("span", null, icon), el("span", null, message));
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.style.transform = "translateY(10px)";
+      toast.style.transition = "all 200ms ease";
+      setTimeout(() => toast.remove(), 200);
+    }, 3200);
+  }
+
+  function setConnected(connected) {
+    const badge = $("conn-badge");
+    const text = $("conn-text");
+    const refreshBtn = $("btn-refresh-all");
+    const disconnectBtn = $("btn-disconnect");
+
+    if (connected) {
+      badge.className = "badge badge-success";
+      text.textContent = "已连接网关";
+      refreshBtn.disabled = false;
+      disconnectBtn.classList.remove("hidden");
+      $("login-modal").classList.add("hidden");
+    } else {
+      badge.className = "badge badge-neutral";
+      text.textContent = "未连接";
+      refreshBtn.disabled = true;
+      disconnectBtn.classList.add("hidden");
+      $("login-modal").classList.remove("hidden");
+    }
+  }
+
+  async function api(path, options = {}) {
+    const headers = {
+      Authorization: "Bearer " + managementKey,
+      ...(options.headers || {}),
+    };
+    if (options.body && !(options.body instanceof FormData)) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    const res = await fetch("/v8/management/" + path, {
+      method: options.method || (options.body ? "POST" : "GET"),
+      headers,
+      body:
+        options.body instanceof FormData
+          ? options.body
+          : options.body
+            ? JSON.stringify(options.body)
+            : undefined,
+      credentials: "omit",
+      cache: "no-store",
+      redirect: "error",
+    });
+
+    if (res.status === 401) {
+      disconnect();
+      throw new Error("管理密钥验证失败，请重新输入");
+    }
+
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const errJson = await res.json();
+        detail = errJson.message || errJson.error || detail;
+      } catch (_) {}
+      throw new Error(detail);
+    }
+
+    return res.json();
+  }
+
+  function disconnect() {
+    generation++;
+    managementKey = "";
+    cachedCredentials = [];
+    setConnected(false);
+    $("quotas-container").replaceChildren();
+    $("cred-list-container").replaceChildren();
+    $("quotas-empty").classList.remove("hidden");
+  }
+
+  // ── Tab 导航切换 ────────────────────────────────────────────────────────────
+  function initTabs() {
+    const tabBtns = document.querySelectorAll(".tab-btn");
+    tabBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        tabBtns.forEach((b) => b.classList.remove("active"));
+        document
+          .querySelectorAll(".tab-content")
+          .forEach((c) => c.classList.add("hidden"));
+        btn.classList.add("active");
+        const targetId = btn.dataset.tab;
+        const targetEl = $(targetId);
+        if (targetEl) targetEl.classList.remove("hidden");
+      });
+    });
+  }
+
+  // ── Tab 1: 额度监控逻辑 ──────────────────────────────────────────────────────
+  async function loadQuotas() {
+    if (busy || !managementKey) return;
+    busy = true;
+    const curGen = generation;
+    const loadingEl = $("quota-loading");
+    const container = $("quotas-container");
+    const emptyEl = $("quotas-empty");
+
+    loadingEl.classList.remove("hidden");
+    emptyEl.classList.add("hidden");
+    container.replaceChildren();
+
+    try {
+      const data = await api("credentials");
+      if (curGen !== generation) return;
+
+      const files = (data.files || []).filter(
+        (f) =>
+          (f.quota_provider || f.provider || f.type) === "factory" &&
+          !f.disabled,
+      );
+      cachedCredentials = data.files || [];
+      renderCredentialsList();
+
+      if (!files.length) {
+        emptyEl.classList.remove("hidden");
+        return;
+      }
+
+      for (const file of files) {
+        if (curGen !== generation) return;
+        const card = el("div", "quota-card");
+        const authIndex = String(file.auth_index ?? file.authIndex ?? "");
+        const label = file.label || file.name || "Factory Account";
+
+        const top = el("div", "quota-card-top");
+        const titleBox = el("div");
+        titleBox.append(
+          el("div", "account-title", label),
+          el("div", "account-plan", `Auth #${authIndex || file.name} · 正在查询配额...`),
+        );
+
+        const singleRefreshBtn = el("button", "btn btn-sm", "🔄");
+        singleRefreshBtn.title = "刷新该账号";
+        singleRefreshBtn.dataset.auth = authIndex;
+        singleRefreshBtn.addEventListener("click", () => {
+          fetchSingleQuota(file, card, curGen);
+        });
+
+        top.append(titleBox, singleRefreshBtn);
+
+        const bucketGroup = el("div", "bucket-group");
+        bucketGroup.append(el("div", null, "获取配额中..."));
+
+        card.append(top, bucketGroup);
+        container.appendChild(card);
+
+        // 单独查询配额
+        fetchSingleQuota(file, card, curGen);
+      }
+    } catch (err) {
+      if (curGen !== generation) return;
+      showToast("获取额度列表失败: " + err.message, "error");
+    } finally {
+      busy = false;
+      loadingEl.classList.add("hidden");
+    }
+  }
+
+  async function fetchSingleQuota(file, cardEl, curGen) {
+    const authIndex = String(file.auth_index ?? file.authIndex ?? "");
+    const planDescEl = cardEl.querySelector(".account-plan");
+    const bucketGroup = cardEl.querySelector(".bucket-group");
+
+    try {
+      const quota = await api("credentials/quota/fetch", {
+        body: { auth_index: authIndex },
+      });
+      if (curGen !== generation) return;
+
+      const sub = quota.subscription || {};
+      const planText = [sub.plan, sub.tierName].filter(Boolean).join(" · ") || "活跃配额";
+      if (planDescEl) {
+        planDescEl.textContent = `Auth #${authIndex || file.name} · ${planText}`;
+      }
+
+      bucketGroup.replaceChildren();
+
+      const groups = quota.groups || [];
+      if (!groups.length) {
+        bucketGroup.append(el("div", null, "未发现配额窗口限制"));
+        return;
+      }
+
+      for (const g of groups) {
+        for (const bucket of g.buckets || []) {
+          const frac = Number(bucket.remainingFraction);
+          const valid = Number.isFinite(frac);
+          const remaining = valid ? Math.max(0, Math.min(1, frac)) : 0;
+          const percent = valid ? (remaining * 100).toFixed(1) : "0.0";
+          const tierClass = remaining >= 0.5 ? "high" : remaining >= 0.2 ? "mid" : "low";
+
+          const bucketEl = el("div", "bucket-item");
+          const header = el("div", "bucket-header");
+          header.append(
+            el("span", "bucket-title", bucket.displayName || bucket.window || "配额"),
+            el("span", "bucket-percent", `${percent}% 剩余`),
+          );
+
+          const track = el("div", "progress-track");
+          const fill = el("div", `progress-fill ${tierClass}`);
+          fill.style.width = `${percent}%`;
+          track.appendChild(fill);
+
+          bucketEl.append(header, track);
+          if (bucket.resetTime) {
+            bucketEl.append(el("span", "bucket-reset", `重置时间: ${bucket.resetTime}`));
+          }
+          bucketGroup.appendChild(bucketEl);
+        }
+      }
+    } catch (err) {
+      if (curGen !== generation) return;
+      bucketGroup.replaceChildren(el("div", null, `查询失败: ${err.message}`));
+    }
+  }
+
+  // ── Tab 2: 凭证管理逻辑 ──────────────────────────────────────────────────────
+  function renderCredentialsList() {
+    const listEl = $("cred-list-container");
+    if (!listEl) return;
+
+    const factoryFiles = cachedCredentials.filter(
+      (f) => (f.quota_provider || f.provider || f.type) === "factory",
+    );
+
+    if (!factoryFiles.length) {
+      const empty = el("div", "empty-box");
+      empty.append(el("p", null, "当前网关尚未配置任何 Factory 凭证"));
+      listEl.replaceChildren(empty);
+      return;
+    }
+
+    listEl.replaceChildren();
+    factoryFiles.forEach((f) => {
+      const item = el("div", "cred-item");
+      const isDisabled = Boolean(f.disabled);
+      const label = f.label || f.name || "Factory Account";
+      const authIdx = String(f.auth_index ?? f.authIndex ?? "");
+
+      const info = el("div", "cred-info");
+      const titleRow = el("div", "cred-label", label + " ");
+      const badge = el("span", `badge ${isDisabled ? "badge-neutral" : "badge-success"}`);
+      badge.append(el("span", "badge-dot"), el("span", null, isDisabled ? "已停用" : "运行中"));
+      titleRow.appendChild(badge);
+
+      const metaRow = el("div", "cred-meta", `${f.name} · Auth Index: ${authIdx || "-"}`);
+      info.append(titleRow, metaRow);
+
+      const actions = el("div", "cred-actions");
+      const toggleBtn = el("button", "btn btn-sm btn-toggle", isDisabled ? "启用" : "停用");
+      toggleBtn.addEventListener("click", () => {
+        toggleCredentialStatus(f.name, !isDisabled, authIdx);
+      });
+
+      const delBtn = el("button", "btn btn-sm btn-danger btn-del", "删除");
+      delBtn.addEventListener("click", () => {
+        deleteCredential(f.name);
+      });
+
+      actions.append(toggleBtn, delBtn);
+      item.append(info, actions);
+      listEl.appendChild(item);
+    });
+  }
+
+  async function toggleCredentialStatus(name, disable, authIndex) {
+    try {
+      await api("credentials/status", {
+        method: "PATCH",
+        body: {
+          name,
+          disabled: disable,
+          ...(authIndex ? { auth_index: authIndex } : {}),
+        },
+      });
+      showToast(`凭证已${disable ? "停用" : "启用"}`, "success");
+      await loadQuotas();
+    } catch (err) {
+      showToast("更新凭证状态失败: " + err.message, "error");
+    }
+  }
+
+  async function deleteCredential(name) {
+    if (!confirm(`确定要从网关中彻底删除凭证「${name}」吗？`)) return;
+    try {
+      await api("credentials", {
+        method: "DELETE",
+        body: { names: [name] },
+      });
+      showToast("凭证已删除", "success");
+      await loadQuotas();
+    } catch (err) {
+      showToast("删除凭证失败: " + err.message, "error");
+    }
+  }
+
+  async function handleAddCredential(e) {
+    e.preventDefault();
+    const labelInput = $("input-cred-label");
+    const keyInput = $("input-cred-key");
+    const submitBtn = $("btn-submit-cred");
+
+    const label = labelInput.value.trim();
+    const apiKey = keyInput.value.trim();
+
+    if (!label || !apiKey) {
+      showToast("请填写完整的凭证别名与 API Key", "error");
+      return;
+    }
+
+    const safeSlug = label.toLowerCase().replace(/[^a-z0-9_-]/g, "-") || "primary";
+    const filename = `factory-${safeSlug}-${Date.now().toString(36)}.json`;
+    const payload = JSON.stringify(
+      {
+        type: "factory",
+        label: label,
+        api_key: apiKey,
+      },
+      null,
+      2,
+    );
+
+    const formData = new FormData();
+    const fileBlob = new Blob([payload], { type: "application/json" });
+    formData.append("file", fileBlob, filename);
+
+    submitBtn.disabled = true;
+    submitBtn.replaceChildren(el("span", null, "⏳ "), el("span", null, "保存中..."));
+
+    try {
+      await api("credentials", {
+        method: "POST",
+        body: formData,
+      });
+      showToast("Factory 凭证添加成功！", "success");
+      labelInput.value = "";
+      keyInput.value = "";
+      await loadQuotas();
+    } catch (err) {
+      showToast("添加凭证失败: " + err.message, "error");
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.replaceChildren(el("span", null, "➕ "), el("span", null, "保存并添加凭证"));
+    }
+  }
+
+  // ── Tab 3: 兼容策略与敏感词逻辑 ──────────────────────────────────────────
+  function renderTags() {
+    const box = $("tags-box");
+    box.replaceChildren();
+    if (!sensitiveWords.length) {
+      box.append(el("span", null, "尚未添加任何敏感词"));
+      return;
+    }
+    sensitiveWords.forEach((word, idx) => {
+      const pill = el("span", "tag-pill");
+      const delBtn = el("button", "tag-remove", "×");
+      delBtn.title = "删除";
+      delBtn.addEventListener("click", () => {
+        sensitiveWords.splice(idx, 1);
+        renderTags();
+      });
+      pill.append(el("span", null, word), delBtn);
+      box.appendChild(pill);
+    });
+  }
+
+  function addWord() {
+    const input = $("input-new-word");
+    const val = input.value.trim();
+    if (!val) return;
+    if (!sensitiveWords.includes(val)) {
+      sensitiveWords.push(val);
+      renderTags();
+    }
+    input.value = "";
+  }
+
+  async function loadCompatibilityConfig() {
+    try {
+      const data = await api("config/plugins/configs/factory");
+      const compat = data.compatibility || {};
+      if (Array.isArray(compat.sensitive_words)) {
+        sensitiveWords = [...compat.sensitive_words];
+      }
+      if (compat.mode) {
+        $("select-compat-mode").value = compat.mode;
+      }
+      $("check-obfuscate-user").checked = Boolean(compat.obfuscate_user_text);
+      renderTags();
+    } catch (_) {
+      renderTags();
+    }
+  }
+
+  async function saveCompatibilityConfig() {
+    const btn = $("btn-save-compat");
+    btn.disabled = true;
+    btn.replaceChildren(el("span", null, "⏳ "), el("span", null, "保存中..."));
+
+    const mode = $("select-compat-mode").value;
+    const obfUser = $("check-obfuscate-user").checked;
+
+    const payload = {
+      enabled: true,
+      compatibility: {
+        mode,
+        sensitive_words: sensitiveWords,
+        obfuscate_user_text: obfUser,
+      },
+    };
+
+    try {
+      await api("config/plugins/configs/factory", {
+        method: "PUT",
+        body: payload,
+      });
+      showToast("兼容性策略已保存并生效", "success");
+    } catch (err) {
+      showToast("保存配置提示: " + err.message, "error");
+    } finally {
+      btn.disabled = false;
+      btn.replaceChildren(el("span", null, "💾 "), el("span", null, "保存策略配置"));
+    }
+  }
+
+  // ── 初始化与事件绑定 ────────────────────────────────────────────────────────
+  function init() {
+    initTabs();
+
+    // 绑定按钮
+    $("btn-refresh-all").addEventListener("click", () => loadQuotas());
+    $("btn-disconnect").addEventListener("click", () => disconnect());
+    $("form-add-cred").addEventListener("submit", handleAddCredential);
+    $("btn-add-word").addEventListener("click", addWord);
+    $("input-new-word").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addWord();
+      }
+    });
+    $("btn-reset-words").addEventListener("click", () => {
+      sensitiveWords = ["Hermes", "Nous", "pi"];
+      renderTags();
+      showToast("已重置为推荐敏感词", "info");
+    });
+    $("btn-save-compat").addEventListener("click", saveCompatibilityConfig);
+
+    // 登录弹窗表单提交
+    $("form-login").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const input = $("input-mgmt-key");
+      const val = input.value.trim();
+      if (!val) return;
+      managementKey = val;
+      input.value = "";
+      setConnected(true);
+      loadQuotas();
+      loadCompatibilityConfig();
+    });
+
+    // 尝试通过 panel-auth 自动无缝认证
+    tryAutoAuth();
+  }
+
+  function tryAutoAuth() {
+    try {
+      if (globalThis.FactoryPanelAuth && typeof globalThis.FactoryPanelAuth.read === "function") {
+        const auth = globalThis.FactoryPanelAuth.read(window);
+        if (auth && auth.key) {
+          managementKey = auth.key;
+          setConnected(true);
+          loadQuotas();
+          loadCompatibilityConfig();
+          return;
+        }
+      }
+    } catch (_) {}
+    setConnected(false);
+  }
+
+  window.addEventListener("DOMContentLoaded", init);
+})();

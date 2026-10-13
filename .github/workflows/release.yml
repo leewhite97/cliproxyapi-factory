@@ -1,0 +1,144 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            lib_name: factory.so
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            lib_name: factory.so
+            cross_arm64: true
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            lib_name: factory.dylib
+          - os: macos-15-intel
+            goos: darwin
+            goarch: amd64
+            lib_name: factory.dylib
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            lib_name: factory.dll
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: Install ARM64 Cross Toolchain (Linux ARM64)
+        if: matrix.cross_arm64
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+
+      - name: Set up MinGW-w64 (Windows)
+        if: matrix.goos == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: mingw-w64-x86_64-gcc
+
+      - name: Extract Clean Version
+        id: meta
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          # Strip leading v / V for CPA pluginstore naming compliance
+          VERSION="${TAG#v}"
+          VERSION="${VERSION#V}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then
+            VERSION="0.1.0"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Compile C-Shared Library
+        shell: bash
+        run: |
+          mkdir -p dist
+          export CGO_ENABLED=1
+          export GOOS=${{ matrix.goos }}
+          export GOARCH=${{ matrix.goarch }}
+
+          if [ "${{ matrix.cross_arm64 }}" = "true" ]; then
+            export CC=aarch64-linux-gnu-gcc
+          fi
+
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            export PATH="/c/msys64/mingw64/bin:$PATH"
+          fi
+
+          go build -buildmode=c-shared -trimpath -ldflags="-s -w" -o dist/${{ matrix.lib_name }} ./cmd/factory
+
+      - name: Package Release Archive
+        shell: bash
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          ZIP_NAME="factory_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}.zip"
+          cd dist
+          # Package library directly at zip root as required by CPA pluginstore
+          if command -v zip >/dev/null 2>&1; then
+            zip -9 "$ZIP_NAME" "${{ matrix.lib_name }}"
+          else
+            7z a -tzip "$ZIP_NAME" "${{ matrix.lib_name }}"
+          fi
+          echo "Built package: $ZIP_NAME"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: asset-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/factory_*.zip
+
+  publish:
+    name: Publish Release Assets
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-dist
+          merge-multiple: true
+
+      - name: Generate Checksums
+        shell: bash
+        run: |
+          cd release-dist
+          sha256sum factory_*.zip > checksums.txt
+          echo "=== SHA256 Checksums ==="
+          cat checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-dist/factory_*.zip
+            release-dist/checksums.txt
+          generate_release_notes: true

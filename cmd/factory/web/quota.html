@@ -1,0 +1,875 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Factory Quota</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+        --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+        /* CPA Minimalist Warm Gray Palette (Light) */
+        --bg-page: #faf9f5;
+        --bg-card: #f0eee8;
+        --bg-subtle: #e9e6df;
+        --bg-hover: #e4e0d7;
+        --bg-input: #ffffff;
+        
+        --text-main: #2d2a26;
+        --text-muted: #6d6760;
+        --text-sub: #a29c95;
+
+        --border: #e3e1db;
+        --border-hover: #cecac4;
+        --border-focus: #8b8680;
+
+        --primary: #8b8680;
+        --primary-hover: #78736d;
+        --primary-active: #66625c;
+        --primary-contrast: #ffffff;
+
+        --success: #10b981;
+        --success-bg: rgba(16, 185, 129, 0.12);
+        --success-text: #065f46;
+
+        --amber: #d97706;
+        --amber-bg: rgba(217, 119, 6, 0.12);
+        --amber-text: #92400e;
+
+        --danger: #c65746;
+        --danger-bg: rgba(198, 87, 70, 0.12);
+        --danger-text: #8a3a30;
+
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 14px;
+        --radius-full: 9999px;
+
+        --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          /* CPA Warm Slate Dark */
+          --bg-page: #181816;
+          --bg-card: #21201d;
+          --bg-subtle: #2a2925;
+          --bg-hover: #33322d;
+          --bg-input: #1a1917;
+
+          --text-main: #edece9;
+          --text-muted: #a29c95;
+          --text-sub: #736d66;
+
+          --border: #32302b;
+          --border-hover: #45423b;
+          --border-focus: #a8a29a;
+
+          --primary: #9a958e;
+          --primary-hover: #ada79f;
+          --primary-active: #c0bbb3;
+
+          --success: #34d399;
+          --success-bg: rgba(52, 211, 153, 0.15);
+          --success-text: #a7f3d0;
+
+          --amber: #fbbf24;
+          --amber-bg: rgba(251, 191, 36, 0.15);
+          --amber-text: #fde68a;
+
+          --danger: #f87171;
+          --danger-bg: rgba(248, 113, 113, 0.15);
+          --danger-text: #fecaca;
+
+          --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+          --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: var(--font-sans);
+        background-color: var(--bg-page);
+        color: var(--text-main);
+        line-height: 1.5;
+        padding: 24px 20px;
+        max-width: 1040px;
+        margin: 0 auto;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* 头部导航与品牌 */
+      header.app-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 16px;
+        margin-bottom: 24px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .brand-group {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .brand-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: var(--radius-md);
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+      }
+
+      .brand-info h1 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      .brand-info p {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      /* 徽标 */
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: var(--radius-full);
+        font-size: 0.78rem;
+        font-weight: 500;
+      }
+
+      .badge-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+      }
+
+      .badge-success {
+        background: var(--success-bg);
+        color: var(--success-text);
+      }
+      .badge-success .badge-dot {
+        background: var(--success);
+      }
+
+      .badge-neutral {
+        background: var(--bg-subtle);
+        color: var(--text-muted);
+      }
+      .badge-neutral .badge-dot {
+        background: var(--text-sub);
+      }
+
+      /* Tab 栏 */
+      nav.tabs-nav {
+        display: flex;
+        gap: 6px;
+        background: var(--bg-card);
+        padding: 4px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border);
+        margin-bottom: 24px;
+      }
+
+      .tab-btn {
+        flex: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 9px 16px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        border: none;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: all 160ms cubic-bezier(0.23, 1, 0.32, 1);
+      }
+
+      .tab-btn:hover {
+        color: var(--text-main);
+        background: var(--bg-hover);
+      }
+
+      .tab-btn.active {
+        background: var(--bg-page);
+        color: var(--text-main);
+        box-shadow: var(--shadow-sm);
+      }
+
+      /* 通用按钮 */
+      button.btn {
+        font-family: inherit;
+        font-size: 0.88rem;
+        font-weight: 500;
+        padding: 8px 14px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+        background: var(--bg-card);
+        color: var(--text-main);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        transition: all 160ms ease;
+      }
+
+      button.btn:hover {
+        background: var(--bg-hover);
+        border-color: var(--border-hover);
+      }
+
+      button.btn:active {
+        transform: scale(0.98);
+      }
+
+      button.btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      button.btn-primary {
+        background: var(--primary);
+        color: var(--primary-contrast);
+        border-color: var(--primary);
+      }
+
+      button.btn-primary:hover {
+        background: var(--primary-hover);
+      }
+
+      button.btn-danger {
+        color: var(--danger);
+        background: var(--danger-bg);
+        border-color: transparent;
+      }
+
+      button.btn-danger:hover {
+        background: var(--danger-bg);
+        filter: brightness(0.95);
+      }
+
+      button.btn-sm {
+        padding: 5px 10px;
+        font-size: 0.8rem;
+      }
+
+      /* 卡片容器 */
+      .card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: var(--shadow-sm);
+      }
+
+      .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+
+      .card-title {
+        font-size: 1.05rem;
+        font-weight: 600;
+      }
+
+      .card-desc {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin-top: 2px;
+      }
+
+      /* 表单组件 */
+      .form-group {
+        margin-bottom: 16px;
+      }
+
+      .form-label {
+        display: block;
+        font-size: 0.85rem;
+        font-weight: 500;
+        margin-bottom: 6px;
+        color: var(--text-main);
+      }
+
+      .form-input, .form-select {
+        width: 100%;
+        font-family: inherit;
+        font-size: 0.9rem;
+        padding: 9px 12px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+        background: var(--bg-input);
+        color: var(--text-main);
+        outline: none;
+        transition: border-color 160ms ease;
+      }
+
+      .form-input:focus, .form-select:focus {
+        border-color: var(--border-focus);
+      }
+
+      .form-input.code {
+        font-family: var(--font-mono);
+      }
+
+      /* 信息提示框 */
+      .callout {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 14px 16px;
+        border-radius: var(--radius-md);
+        background: var(--bg-subtle);
+        border: 1px solid var(--border);
+        font-size: 0.88rem;
+        margin-bottom: 20px;
+      }
+
+      .callout-icon {
+        font-size: 1.1rem;
+        line-height: 1.2;
+      }
+
+      .callout-content p {
+        color: var(--text-muted);
+        margin-top: 4px;
+      }
+
+      .callout-content a {
+        color: var(--text-main);
+        font-weight: 500;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+
+      /* 额度卡片流 */
+      .quota-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 16px;
+      }
+
+      .quota-card {
+        background: var(--bg-page);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        transition: border-color 160ms ease;
+      }
+
+      .quota-card:hover {
+        border-color: var(--border-hover);
+      }
+
+      .quota-card-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+      }
+
+      .account-title {
+        font-size: 1rem;
+        font-weight: 600;
+      }
+
+      .account-plan {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+      }
+
+      .bucket-group {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 4px;
+      }
+
+      .bucket-item {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 10px 12px;
+      }
+
+      .bucket-header {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.85rem;
+        margin-bottom: 6px;
+      }
+
+      .bucket-title {
+        font-weight: 500;
+      }
+
+      .bucket-percent {
+        font-family: var(--font-mono);
+        font-weight: 600;
+      }
+
+      .progress-track {
+        height: 6px;
+        width: 100%;
+        background: var(--bg-subtle);
+        border-radius: var(--radius-full);
+        overflow: hidden;
+      }
+
+      .progress-fill {
+        height: 100%;
+        border-radius: var(--radius-full);
+        transition: width 300ms ease;
+      }
+
+      .progress-fill.high { background: var(--success); }
+      .progress-fill.mid { background: var(--amber); }
+      .progress-fill.low { background: var(--danger); }
+
+      .bucket-reset {
+        font-size: 0.76rem;
+        color: var(--text-sub);
+        margin-top: 6px;
+        display: block;
+      }
+
+      /* 凭证列表项 */
+      .cred-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .cred-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        border-radius: var(--radius-sm);
+        background: var(--bg-page);
+        border: 1px solid var(--border);
+      }
+
+      .cred-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .cred-label {
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+
+      .cred-meta {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+      }
+
+      .cred-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      /* 敏感词 Tag 组件 */
+      .tags-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 10px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+        background: var(--bg-input);
+        min-height: 48px;
+        margin-bottom: 12px;
+      }
+
+      .tag-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--bg-subtle);
+        color: var(--text-main);
+        padding: 4px 10px;
+        border-radius: var(--radius-full);
+        font-size: 0.85rem;
+        font-weight: 500;
+      }
+
+      .tag-remove {
+        background: transparent;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 1rem;
+        line-height: 1;
+        padding: 0;
+      }
+
+      .tag-remove:hover {
+        color: var(--danger);
+      }
+
+      .tag-input-row {
+        display: flex;
+        gap: 8px;
+      }
+
+      /* Toast 消息提示 */
+      #toast-container {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 9999;
+      }
+
+      .toast {
+        padding: 12px 18px;
+        border-radius: var(--radius-md);
+        background: var(--bg-card);
+        color: var(--text-main);
+        box-shadow: var(--shadow-md);
+        border: 1px solid var(--border);
+        font-size: 0.88rem;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        animation: toast-in 200ms ease;
+      }
+
+      @keyframes toast-in {
+        from { transform: translateY(10px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+
+      /* 模态框 / 登录浮层 */
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+      }
+
+      .modal-dialog {
+        background: var(--bg-page);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 28px;
+        max-width: 440px;
+        width: 90%;
+        box-shadow: var(--shadow-md);
+      }
+
+      .modal-title {
+        font-size: 1.15rem;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+
+      .modal-text {
+        font-size: 0.88rem;
+        color: var(--text-muted);
+        margin-bottom: 20px;
+      }
+
+      .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+      }
+
+      /* 空状态 */
+      .empty-box {
+        text-align: center;
+        padding: 40px 20px;
+        color: var(--text-muted);
+      }
+
+      .empty-icon {
+        font-size: 2.2rem;
+        margin-bottom: 10px;
+        opacity: 0.7;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 头部导航 -->
+    <header class="app-header">
+      <div class="brand-group">
+        <div class="brand-icon">⚡</div>
+        <div class="brand-info">
+          <h1>Factory Quota & 控制台</h1>
+          <p>模型路由集成、配额可视化与敏感过滤策略</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span id="conn-badge" class="badge badge-neutral">
+          <span class="badge-dot"></span>
+          <span id="conn-text">未连接</span>
+        </span>
+        <button id="btn-refresh-all" class="btn btn-sm" disabled>
+          <span>🔄</span> 刷新所有额度
+        </button>
+        <button id="btn-disconnect" class="btn btn-sm hidden">
+          断开连接
+        </button>
+      </div>
+    </header>
+
+    <!-- Tab 导航 -->
+    <nav class="tabs-nav">
+      <button class="tab-btn active" data-tab="tab-quotas">
+        <span>📊</span> 额度监控
+      </button>
+      <button class="tab-btn" data-tab="tab-credentials">
+        <span>🔑</span> 凭证管理
+      </button>
+      <button class="tab-btn" data-tab="tab-compatibility">
+        <span>🛡️</span> 敏感词与兼容策略
+      </button>
+    </nav>
+
+    <!-- TAB 1: 额度监控 -->
+    <section id="tab-quotas" class="tab-content">
+      <div id="quota-loading" class="callout hidden">
+        <span class="callout-icon">⏳</span>
+        <div class="callout-content">
+          <strong>正在更新额度数据...</strong>
+          <p id="quota-status-msg">正在逐个检索已绑定的 Factory 凭证并计算窗口余量</p>
+        </div>
+      </div>
+      <div id="quotas-container" class="quota-grid"></div>
+      <div id="quotas-empty" class="empty-box hidden">
+        <div class="empty-icon">📭</div>
+        <p>暂无已启用的 Factory 凭证</p>
+        <p style="font-size: 0.85rem; margin-top: 6px;">
+          请切换至「凭证管理」选项卡添加您的 Factory 访问密钥。
+        </p>
+      </div>
+    </section>
+
+    <!-- TAB 2: 凭证管理 -->
+    <section id="tab-credentials" class="tab-content hidden">
+      <!-- 官方 API 直达引导卡片 -->
+      <div class="callout">
+        <span class="callout-icon">💡</span>
+        <div class="callout-content">
+          <strong>如何获取 Factory 凭证？</strong>
+          <p>
+            Factory 官方接口采用强绑定组织的密钥验证体系。请前往
+            <a href="https://app.factory.ai/settings/api-keys" target="_blank" rel="noopener noreferrer">
+              Factory 控制台设置页面 ↗
+            </a>
+            生成密钥并在下方录入。
+          </p>
+        </div>
+      </div>
+
+      <!-- 添加凭证卡片 -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">添加 Factory 凭证</h2>
+            <p class="card-desc">配置将直接同步至 CPA 凭证中心并即时生效</p>
+          </div>
+        </div>
+        <form id="form-add-cred">
+          <div class="form-group">
+            <label class="form-label" for="input-cred-label">凭证别名 (Label)</label>
+            <input
+              id="input-cred-label"
+              class="form-input"
+              type="text"
+              placeholder="例如：Factory Primary / Team Account"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="input-cred-key">Factory 访问密钥</label>
+            <input
+              id="input-cred-key"
+              class="form-input code"
+              type="password"
+              placeholder="输入 Factory 凭证密钥..."
+              required
+              autocomplete="off"
+            />
+          </div>
+          <div style="display: flex; justify-content: flex-end;">
+            <button id="btn-submit-cred" type="submit" class="btn btn-primary">
+              <span>➕</span> 保存并添加凭证
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- 已配置凭证列表卡片 -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">已配置凭证列表</h2>
+            <p class="card-desc">管理网关当前加载的 Factory 账号状态与凭证文件</p>
+          </div>
+        </div>
+        <div id="cred-list-container" class="cred-list">
+          <div class="empty-box">
+            <p>正在读取凭证列表...</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: 敏感词与兼容策略 -->
+    <section id="tab-compatibility" class="tab-content hidden">
+      <div class="callout">
+        <span class="callout-icon">🛡️</span>
+        <div class="callout-content">
+          <strong>Factory 敏感词混淆防护</strong>
+          <p>
+            借鉴官方 Antigravity 敏感词混淆算法。当配置的敏感词出现在请求指令中时，插件会自动嵌入无害的零宽空格，安全绕过上游对特定客户端名称的硬性风控门禁，且绝不污染工具声明与代码输出。
+          </p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">敏感词列表 (Sensitive Words)</h2>
+            <p class="card-desc">输入需要保护免受拦截的词汇（回车或点击添加）</p>
+          </div>
+        </div>
+
+        <div id="tags-box" class="tags-container"></div>
+
+        <div class="tag-input-row">
+          <input
+            id="input-new-word"
+            class="form-input"
+            type="text"
+            placeholder="输入词汇（例如：Hermes / pi / droid）"
+          />
+          <button id="btn-add-word" class="btn">
+            添加词汇
+          </button>
+          <button id="btn-reset-words" class="btn" title="填入推荐默认词表">
+            预设推荐
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">混淆运作策略</h2>
+            <p class="card-desc">控制文本混淆的生效范围与模式</p>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">混淆模式 (Mode)</label>
+          <select id="select-compat-mode" class="form-select">
+            <option value="words">精准敏感词混淆 (Words - 推荐)</option>
+            <option value="passthrough">完全透传 (Passthrough - 原始文本)</option>
+            <option value="off">完全关闭 (Off)</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin-top: 18px;">
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer;">
+            <input id="check-obfuscate-user" type="checkbox" />
+            <span>扩大混淆范围至用户聊天文本 (默认仅混淆系统与开发者指令)</span>
+          </label>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; margin-top: 24px;">
+          <button id="btn-save-compat" class="btn btn-primary">
+            <span>💾</span> 保存策略配置
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 独立访问时的登录模态窗 -->
+    <div id="login-modal" class="modal-backdrop hidden">
+      <div class="modal-dialog">
+        <h2 class="modal-title">连接到 CLI Proxy API</h2>
+        <p class="modal-text">
+          请输入您的 CPA 管理密钥（Management Key）以授权控制台读取配额及凭证配置。
+        </p>
+        <form id="form-login">
+          <div class="form-group">
+            <input
+              id="input-mgmt-key"
+              class="form-input"
+              type="password"
+              placeholder="输入管理密钥..."
+              required
+              autocomplete="off"
+            />
+          </div>
+          <div class="modal-actions">
+            <button type="submit" class="btn btn-primary">
+              授权连接
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 全局 Toast 容器 -->
+    <div id="toast-container"></div>
+
+    <script src="./panel-auth.js"></script>
+    <script src="./quota.js"></script>
+  </body>
+</html>

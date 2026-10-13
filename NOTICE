@@ -1,0 +1,10 @@
+This project includes software and references from third parties under the MIT License:
+
+- Factory protocol mapping derived from tjboudreaux/pi-provider-factory
+  Copyright (c) 2026 Travis Boudreaux
+
+- C ABI bridge and SSE framing patterns adapted from arthur-sommer-etc/cliproxyapi-copilot-plugin
+  Copyright (c) 2026 Arthur Sommer
+
+- CLIProxyAPI SDK interfaces and contracts from router-for-me/CLIProxyAPI
+  Copyright (c) 2025 Luis Pater, Router-For.ME
