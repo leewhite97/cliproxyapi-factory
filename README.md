@@ -61,7 +61,7 @@ plugins:
       enabled: true
       catalog_cache_path: "./logs/factory-cache/models.json"
       compatibility:
-        mode: "words"                # "words", "passthrough", or "off"
+        mode: "factory"              # "factory" (default) or "passthrough"
         sensitive_words:
           - "Hermes"
           - "Nous"
@@ -70,6 +70,17 @@ plugins:
 ```
 
 Restart CLIProxyAPI to load the plugin.
+
+To save settings from the web console, CPA must be able to write its configuration
+file. For Docker, mount the configuration file read-write; the plugin library
+can stay read-only. A read-only configuration remains valid for inference, but
+Management API saves will fail. The deployment template must not overwrite the
+runtime configuration on subsequent starts.
+
+`passthrough` disables Factory identity adaptation and cannot enable word
+filtering; the console clears its word list and user-text flag when saving this
+mode. Upstream acceptance is not guaranteed. Use `factory` with an empty word
+list to disable filtering while keeping Factory adaptation.
 
 ---
 
@@ -88,8 +99,8 @@ Restart CLIProxyAPI to load the plugin.
 |---|:---:|:---:|---|
 | `enabled` | `bool` | `true` | Enable or disable the plugin. |
 | `catalog_cache_path` | `string` | `""` | Path to save model discovery snapshot. |
-| `compatibility.mode` | `string` | `"words"` | `"words"`, `"passthrough"`, or `"off"`. |
-| `compatibility.sensitive_words` | `string[]` | `["Hermes", "Nous", "pi"]` | Word list for zero-width compatibility filtering. |
+| `compatibility.mode` | `string` | `"factory"` | Factory adaptation, or `"passthrough"` without identity adaptation. |
+| `compatibility.sensitive_words` | `string[]` | `[]` | Optional word list. An empty list disables extra word filtering. |
 | `compatibility.obfuscate_user_text`| `bool` | `false` | Apply compatibility filtering to user messages in addition to system instructions. |
 
 ---
@@ -102,6 +113,7 @@ go test -race ./... -count=1
 
 # Verify panel session integration
 node scripts/test_panel_auth.cjs
+node scripts/test_panel_config.cjs
 
 # Verify build output
 make verify

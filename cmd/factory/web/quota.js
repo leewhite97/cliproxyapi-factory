@@ -4,7 +4,8 @@
   let managementKey = "";
   let busy = false;
   let generation = 0;
-  let sensitiveWords = ["Hermes", "Nous", "pi"];
+  let sensitiveWords = [];
+  let compatibilityLoaded = false;
   let cachedCredentials = [];
 
   const $ = (id) => document.getElementById(id);
@@ -96,6 +97,8 @@
     generation++;
     managementKey = "";
     cachedCredentials = [];
+    compatibilityLoaded = false;
+    $("btn-save-compat").disabled = true;
     setConnected(false);
     $("quotas-container").replaceChildren();
     $("cred-list-container").replaceChildren();
@@ -410,50 +413,73 @@
   }
 
   async function loadCompatibilityConfig() {
+    const current = generation;
+    compatibilityLoaded = false;
+    $("btn-save-compat").disabled = true;
     try {
       const data = await api("config/plugins/configs/factory");
+      if (current !== generation) return;
       const compat = data.compatibility || {};
-      if (Array.isArray(compat.sensitive_words)) {
-        sensitiveWords = [...compat.sensitive_words];
+      const mode = compat.mode || "factory";
+      if (!["factory", "passthrough"].includes(mode)) {
+        throw new Error("服务器返回不支持的兼容模式，请检查配置");
       }
-      if (compat.mode) {
-        $("select-compat-mode").value = compat.mode;
-      }
+      sensitiveWords = Array.isArray(compat.sensitive_words) ? [...compat.sensitive_words] : [];
+      $("select-compat-mode").value = mode;
       $("check-obfuscate-user").checked = Boolean(compat.obfuscate_user_text);
       renderTags();
-    } catch (_) {
-      renderTags();
+      compatibilityLoaded = true;
+      $("btn-save-compat").disabled = false;
+    } catch (err) {
+      if (current !== generation) return;
+      showToast("读取兼容策略失败，已禁止保存: " + err.message, "error");
     }
   }
 
   async function saveCompatibilityConfig() {
+    if (!managementKey || !compatibilityLoaded) return;
+    const current = generation;
     const btn = $("btn-save-compat");
+    if (btn.disabled) return;
     btn.disabled = true;
     btn.replaceChildren(el("span", null, "⏳ "), el("span", null, "保存中..."));
-
     const mode = $("select-compat-mode").value;
-    const obfUser = $("check-obfuscate-user").checked;
-
-    const payload = {
-      enabled: true,
-      compatibility: {
-        mode,
-        sensitive_words: sensitiveWords,
-        obfuscate_user_text: obfUser,
-      },
+    const compat = {
+      mode,
+      sensitive_words: mode === "passthrough" ? [] : [...sensitiveWords],
+      obfuscate_user_text: mode === "passthrough" ? false : $("check-obfuscate-user").checked,
     };
-
     try {
+      if (!["factory", "passthrough"].includes(mode)) throw new Error("不支持的兼容模式");
+      // PATCH only the owned settings. Never replace enabled/cache/unknown options.
       await api("config/plugins/configs/factory", {
-        method: "PUT",
-        body: payload,
+        method: "PATCH",
+        body: { compatibility: compat },
       });
-      showToast("兼容性策略已保存并生效", "success");
+      if (current !== generation) return;
+      const stored = await api("config/plugins/configs/factory");
+      if (current !== generation) return;
+      const actual = stored.compatibility || {};
+      if ((actual.mode || "factory") !== compat.mode ||
+          JSON.stringify(actual.sensitive_words || []) !== JSON.stringify(compat.sensitive_words) ||
+          Boolean(actual.obfuscate_user_text) !== compat.obfuscate_user_text) {
+        throw new Error("保存后回读不一致，请重新加载配置");
+      }
+      sensitiveWords = [...compat.sensitive_words];
+      $("check-obfuscate-user").checked = compat.obfuscate_user_text;
+      renderTags();
+      showToast("兼容性策略已保存并回读确认", "success");
     } catch (err) {
-      showToast("保存配置提示: " + err.message, "error");
+      if (current !== generation) return;
+      const message = /read-only|readonly/i.test(err.message)
+        ? "CPA 配置为只读，无法保存。请将配置文件挂载设为可写后重新加载。"
+        : "保存配置失败: " + err.message;
+      showToast(message, "error");
     } finally {
-      btn.disabled = false;
-      btn.replaceChildren(el("span", null, "💾 "), el("span", null, "保存策略配置"));
+      if (current === generation) {
+        btn.disabled = !compatibilityLoaded;
+        btn.replaceChildren(el("span", null, "💾 "), el("span", null, "保存策略配置"));
+      }
     }
   }
 

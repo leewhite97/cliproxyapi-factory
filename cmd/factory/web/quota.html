@@ -818,9 +818,8 @@
         <div class="form-group">
           <label class="form-label">混淆模式 (Mode)</label>
           <select id="select-compat-mode" class="form-select">
-            <option value="words">精准敏感词混淆 (Words - 推荐)</option>
-            <option value="passthrough">完全透传 (Passthrough - 原始文本)</option>
-            <option value="off">完全关闭 (Off)</option>
+            <option value="factory">Factory 适配（推荐；空词表关闭额外混淆）</option>
+            <option value="passthrough">原样透传（不注入身份，可能被上游拒绝）</option>
           </select>
         </div>
 

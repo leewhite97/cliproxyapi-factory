@@ -38,6 +38,7 @@ jobs:
       - name: Test Panel Session Adapter
         run: |
           node scripts/test_panel_auth.cjs
+          node scripts/test_panel_config.cjs
 
       - name: Build C-Shared Library
         run: |
