@@ -204,10 +204,6 @@
       if (curGen !== generation) return;
 
       const sub = quota.subscription || {};
-      const planText = [sub.plan, sub.tierName].filter(Boolean).join(" · ") || "活跃配额";
-      if (planDescEl) {
-        planDescEl.textContent = `Auth #${authIndex || file.name} · ${planText}`;
-      }
 
       bucketGroup.replaceChildren();
 
@@ -217,7 +213,63 @@
         return;
       }
 
+      function formatWindowName(window) {
+        switch (window) {
+          case "5h":
+            return "5 小时滚动窗口";
+          case "weekly":
+            return "每周额度 (Weekly)";
+          case "monthly":
+            return "每月额度 (Monthly)";
+          default:
+            return window || "配额窗口";
+        }
+      }
+
+      function formatResetTime(isoStr) {
+        if (!isoStr) return "";
+        try {
+          const d = new Date(isoStr);
+          if (Number.isNaN(d.getTime())) return isoStr;
+          return d.toLocaleString("zh-CN", {
+            hour12: false,
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        } catch (_) {
+          return isoStr;
+        }
+      }
+
+      const hasCore = groups.some((g) => (g.displayName || "").toLowerCase().includes("core"));
+      const planText = [
+        sub.plan,
+        sub.tierName,
+        hasCore ? "Standard + Droid Core 双额度" : "Standard 单额度",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      if (planDescEl) {
+        planDescEl.textContent = `Auth #${authIndex || file.name} · ${planText}`;
+      }
+
       for (const g of groups) {
+        const isCore = (g.displayName || "").toLowerCase().includes("core");
+        const groupEl = el("div", "quota-tier-section");
+
+        const tierHeader = el("div", "quota-tier-header");
+        const tierTitle = el("span", "quota-tier-title", g.displayName || "配额");
+        const tierBadge = el(
+          "span",
+          `badge quota-tier-badge ${isCore ? "badge-core" : "badge-standard"}`,
+          isCore ? "Droid Core 独立额度" : "Standard 通用额度",
+        );
+        tierHeader.append(tierTitle, tierBadge);
+        groupEl.appendChild(tierHeader);
+
+        const bucketsList = el("div", "bucket-list");
         for (const bucket of g.buckets || []) {
           const frac = Number(bucket.remainingFraction);
           const valid = Number.isFinite(frac);
@@ -227,9 +279,11 @@
 
           const bucketEl = el("div", "bucket-item");
           const header = el("div", "bucket-header");
+          const windowTitle = formatWindowName(bucket.window);
+          const statusText = remaining <= 0 ? "已耗尽 (0.0% 剩余)" : `${percent}% 剩余`;
           header.append(
-            el("span", "bucket-title", bucket.displayName || bucket.window || "配额"),
-            el("span", "bucket-percent", `${percent}% 剩余`),
+            el("span", "bucket-title", windowTitle),
+            el("span", `bucket-percent ${remaining <= 0 ? "exhausted" : ""}`, statusText),
           );
 
           const track = el("div", "progress-track");
@@ -239,10 +293,13 @@
 
           bucketEl.append(header, track);
           if (bucket.resetTime) {
-            bucketEl.append(el("span", "bucket-reset", `重置时间: ${bucket.resetTime}`));
+            const formattedTime = formatResetTime(bucket.resetTime);
+            bucketEl.append(el("span", "bucket-reset", `重置时间: ${formattedTime} (${bucket.resetTime})`));
           }
-          bucketGroup.appendChild(bucketEl);
+          bucketsList.appendChild(bucketEl);
         }
+        groupEl.appendChild(bucketsList);
+        bucketGroup.appendChild(groupEl);
       }
     } catch (err) {
       if (curGen !== generation) return;

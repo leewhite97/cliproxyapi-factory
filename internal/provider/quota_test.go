@@ -94,3 +94,90 @@ func TestConvertBillingLimitsToQuota(t *testing.T) {
 	}
 	t.Logf("Normalized JSON: %s", string(rawJSON))
 }
+
+func TestConvertBillingLimitsToQuota_DualQuotas(t *testing.T) {
+	fixture := `{
+  "usesTokenRateLimitsBilling": true,
+  "limits": {
+    "standard": {
+      "fiveHour": {
+        "usedPercent": 0,
+        "windowEnd": null,
+        "secondsRemaining": null
+      },
+      "weekly": {
+        "usedPercent": 100,
+        "windowEnd": "2026-10-16T02:22:13.203Z",
+        "secondsRemaining": 63985
+      },
+      "monthly": {
+        "usedPercent": 54,
+        "windowEnd": "2026-10-31T20:20:07.620Z",
+        "secondsRemaining": 1424659
+      }
+    },
+    "core": {
+      "fiveHour": {
+        "usedPercent": 0,
+        "windowEnd": null,
+        "secondsRemaining": null
+      },
+      "weekly": {
+        "usedPercent": 7,
+        "windowEnd": "2026-10-22T03:32:19.175Z",
+        "secondsRemaining": 586591
+      },
+      "monthly": {
+        "usedPercent": 5,
+        "windowEnd": "2026-11-14T03:32:19.175Z",
+        "secondsRemaining": 2573791
+      }
+    }
+  },
+  "overagePreference": "droidCore",
+  "canManageOverage": true,
+  "extraUsageBalanceCents": 0,
+  "extraUsageAllowed": true
+}`
+
+	now := time.Now()
+	res, err := ConvertBillingLimitsToQuota([]byte(fixture), now)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(res.Groups) != 2 {
+		t.Fatalf("expected 2 groups (Standard and Droid Core), got %d", len(res.Groups))
+	}
+
+	// Group 0: Standard
+	std := res.Groups[0]
+	if std.DisplayName != "Standard" {
+		t.Errorf("expected Standard group name, got %s", std.DisplayName)
+	}
+	if len(std.Buckets) != 3 {
+		t.Fatalf("expected 3 standard buckets, got %d", len(std.Buckets))
+	}
+	if std.Buckets[1].RemainingFraction != 0.0 {
+		t.Errorf("expected weekly exhausted (0.0), got %f", std.Buckets[1].RemainingFraction)
+	}
+	if std.Buckets[2].RemainingFraction < 0.459 || std.Buckets[2].RemainingFraction > 0.461 {
+		t.Errorf("expected monthly ~0.46, got %f", std.Buckets[2].RemainingFraction)
+	}
+
+	// Group 1: Droid Core
+	core := res.Groups[1]
+	if core.DisplayName != "Droid Core" {
+		t.Errorf("expected Droid Core group name, got %s", core.DisplayName)
+	}
+	// 5h was null so skipped, weekly and monthly present
+	if len(core.Buckets) != 2 {
+		t.Fatalf("expected 2 core buckets (weekly, monthly), got %d", len(core.Buckets))
+	}
+	if core.Buckets[0].Window != "weekly" || core.Buckets[0].RemainingFraction < 0.929 || core.Buckets[0].RemainingFraction > 0.931 {
+		t.Errorf("expected weekly core ~0.93, got %f", core.Buckets[0].RemainingFraction)
+	}
+	if core.Buckets[1].Window != "monthly" || core.Buckets[1].RemainingFraction < 0.949 || core.Buckets[1].RemainingFraction > 0.951 {
+		t.Errorf("expected monthly core ~0.95, got %f", core.Buckets[1].RemainingFraction)
+	}
+}

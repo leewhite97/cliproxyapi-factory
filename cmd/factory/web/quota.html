@@ -417,8 +417,61 @@
       .bucket-group {
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 12px;
         margin-top: 4px;
+      }
+
+      .quota-tier-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding-top: 12px;
+        margin-top: 8px;
+        border-top: 1px dashed var(--border);
+      }
+
+      .quota-tier-section:first-child {
+        padding-top: 0;
+        margin-top: 0;
+        border-top: none;
+      }
+
+      .quota-tier-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2px;
+      }
+
+      .quota-tier-title {
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: var(--text-main);
+      }
+
+      .quota-tier-badge {
+        font-size: 0.75rem;
+        padding: 2px 8px;
+        border-radius: var(--radius-full);
+        font-weight: 500;
+      }
+
+      .badge-core {
+        background: rgba(168, 85, 247, 0.12);
+        color: #a855f7;
+        border: 1px solid rgba(168, 85, 247, 0.25);
+      }
+
+      .badge-standard {
+        background: rgba(59, 130, 246, 0.12);
+        color: #3b82f6;
+        border: 1px solid rgba(59, 130, 246, 0.25);
+      }
+
+      .bucket-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
       }
 
       .bucket-item {
